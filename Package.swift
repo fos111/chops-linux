@@ -23,6 +23,9 @@ let package = Package(
         // swift-log — structured JSON logging sinks replace os.Logger (T10).
         // Stack pinned by the work plan: from "1.6.0".
         .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
+        // Vapor — the localhost HTTP/WebSocket sidecar (T11).
+        // Stack pinned by the work plan: from "4.100.0".
+        .package(url: "https://github.com/vapor/vapor.git", from: "4.100.0"),
     ],
     targets: [
         // Portable core. Batch 1 ports the frozen macOS logic here field-for-field
@@ -40,7 +43,10 @@ let package = Package(
         // fixed UI↔chopsd REST/WS contract from the work plan.
         .executableTarget(
             name: "chopsd",
-            dependencies: ["chopscore"],
+            dependencies: [
+                "chopscore",
+                .product(name: "Vapor", package: "vapor"),
+            ],
             path: "Core/chopsd"
         ),
         // All tests run against HOME pointed at a tmp copy of linux/fixtures/home —
