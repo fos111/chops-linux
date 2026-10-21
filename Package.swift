@@ -20,6 +20,9 @@ let package = Package(
     dependencies: [
         // GRDB 7 — the SQLite layer that replaces SwiftData on Linux (T05).
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+        // swift-log — structured JSON logging sinks replace os.Logger (T10).
+        // Stack pinned by the work plan: from "1.6.0".
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
     ],
     targets: [
         // Portable core. Batch 1 ports the frozen macOS logic here field-for-field
@@ -29,6 +32,7 @@ let package = Package(
             name: "chopscore",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "Logging", package: "swift-log"),
             ],
             path: "Core/ChopsCore/Sources/chopscore"
         ),
@@ -43,7 +47,10 @@ let package = Package(
         // never the real $HOME.
         .testTarget(
             name: "chopscoretests",
-            dependencies: ["chopscore"],
+            dependencies: [
+                "chopscore",
+                .product(name: "Logging", package: "swift-log"),
+            ],
             path: "Core/ChopsCore/Tests/chopscoretests"
         ),
     ]
