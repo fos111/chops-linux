@@ -1,156 +1,139 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
+  import { app } from "$lib/app.svelte.js";
+  import { filterTitle } from "$lib/filters";
+  import { buildPaletteCommands, isPaletteShortcut, isSidebarShortcut, type PaletteCommand } from "$lib/palette";
+  import CommandPalette from "$lib/components/CommandPalette.svelte";
+  import DetailPlaceholder from "$lib/components/DetailPlaceholder.svelte";
+  import Sidebar from "$lib/components/Sidebar.svelte";
+  import SkillList from "$lib/components/SkillList.svelte";
+  import StatusBar from "$lib/components/StatusBar.svelte";
 
-  let name = $state("");
-  let greetMsg = $state("");
+  const title = $derived(filterTitle(app.filter, app.tools));
+  const commands = $derived(buildPaletteCommands(app.tools));
+  const showTypeBadge = $derived(
+    app.filter.type === "tool" ||
+      app.filter.type === "favorites" ||
+      app.filter.type === "collection" ||
+      app.filter.type === "server",
+  );
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+  function handleGlobalKeydown(event: KeyboardEvent): void {
+    if (event.defaultPrevented) return;
+
+    if (isPaletteShortcut(event)) {
+      event.preventDefault();
+      app.openPalette();
+    } else if (isSidebarShortcut(event)) {
+      event.preventDefault();
+      app.toggleSidebar();
+    }
   }
+
+  function runPaletteCommand(command: PaletteCommand): void {
+    if (command.action.type === "navigate") {
+      app.runPaletteAction(command.action.filter);
+    }
+  }
+
+  onMount(() => {
+    const stop = app.start();
+    window.addEventListener("keydown", handleGlobalKeydown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeydown);
+      stop();
+    };
+  });
 </script>
 
-<main class="container">
-  <h1>Chops</h1>
+<div class="shell" class:sidebar-hidden={!app.sidebarVisible}>
+  <aside class="shell-sidebar">
+    <Sidebar
+      tools={app.tools}
+      skills={app.skills}
+      filter={app.filter}
+      onselect={(filter) => app.setFilter(filter)}
+    />
+  </aside>
 
-  <div class="row">
-    <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
+  <div class="shell-list">
+    <SkillList
+      skills={app.visibleSkills}
+      {title}
+      searchText={app.searchText}
+      selectedId={app.selectedId}
+      {showTypeBadge}
+      loading={app.loading}
+      error={app.loadError}
+      onselect={(id) => app.selectSkill(id)}
+      onsearch={(text) => app.setSearchText(text)}
+      onretry={() => app.retry()}
+      ontoggleSidebar={() => app.toggleSidebar()}
+    />
   </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
 
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
-</main>
+  <div class="shell-detail">
+    <DetailPlaceholder skill={app.selectedSkill} tools={app.tools} />
+  </div>
+
+  <footer class="shell-status">
+    <StatusBar
+      connection={app.connection}
+      total={app.skills.length}
+      visible={app.visibleSkills.length}
+      unsaved={app.unsaved}
+      theme={app.theme}
+      settingsError={app.settingsError}
+      ontheme={(theme) => void app.setTheme(theme)}
+    />
+  </footer>
+</div>
+
+<CommandPalette
+  open={app.paletteOpen}
+  {commands}
+  onaction={runPaletteCommand}
+  onclose={() => app.closePalette()}
+/>
 
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+  .shell {
+    display: grid;
+    grid-template-columns: 220px 340px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 28px;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg);
   }
 
-  a:hover {
-    color: #24c8db;
+  .shell.sidebar-hidden {
+    grid-template-columns: 0 340px minmax(0, 1fr);
   }
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+  .shell-sidebar {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
 
+  .shell-list,
+  .shell-detail {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .shell-status {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  @media (max-width: 1120px) {
+    .shell {
+      grid-template-columns: 196px 300px minmax(0, 1fr);
+    }
+
+    .shell.sidebar-hidden {
+      grid-template-columns: 0 300px minmax(0, 1fr);
+    }
+  }
 </style>
