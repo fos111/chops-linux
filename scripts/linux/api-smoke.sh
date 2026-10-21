@@ -57,6 +57,16 @@ api() {
     fi
 }
 
+# Value of a response header (case-insensitive name), from a `curl -D -` dump.
+header_value() {
+    local name="$1" headers="$2" want
+    want="$(tr '[:upper:]' '[:lower:]' <<<"$name")"
+    tr -d '\r' <<<"$headers" | awk -v want="$want" '
+        BEGIN { FS = ": " }
+        tolower($1) == want { print $2; exit }
+    '
+}
+
 port_busy() {
     (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
 }
@@ -198,6 +208,39 @@ check jq -e '
 
 echo "== GET /api/tools"
 pass "GET /api/tools (13 listable tools, claude installed / augment absent)"
+
+# ---------------------------------------------------------------------------
+# CORS: the Tauri webview is cross-origin to 127.0.0.1:47115
+# ---------------------------------------------------------------------------
+cors_headers="$(curl -sS -D - -o /dev/null -H 'Origin: tauri://localhost' "$BASE/api/tools")"
+cors_origin="$(header_value 'Access-Control-Allow-Origin' "$cors_headers")"
+[[ "$cors_origin" == "tauri://localhost" ]] \
+    || fail "GET /api/tools did not reflect the Tauri origin (got '${cors_origin:-<missing>}')"
+grep -qi '^vary: origin' <<<"$(tr -d '\r' <<<"$cors_headers")" \
+    || fail "GET /api/tools is missing Vary: Origin"
+
+echo "== CORS GET /api/tools"
+pass "CORS GET /api/tools (Origin: tauri://localhost -> ACAO echo + Vary: Origin)"
+
+preflight_headers="$(curl -sS -D - -o /dev/null -X OPTIONS \
+    -H 'Origin: http://localhost:5173' \
+    -H 'Access-Control-Request-Method: POST' \
+    -H 'Access-Control-Request-Headers: content-type, authorization' \
+    "$BASE/api/tools")"
+preflight_status="$(head -n 1 <<<"$preflight_headers" | awk '{print $2}')"
+[[ "$preflight_status" == "204" ]] \
+    || fail "OPTIONS /api/tools returned ${preflight_status:-<none>}, expected 204"
+[[ "$(header_value 'Access-Control-Allow-Origin' "$preflight_headers")" == "http://localhost:5173" ]] \
+    || fail "OPTIONS /api/tools did not reflect the Vite dev origin"
+grep -qi '^access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS' \
+    <<<"$(tr -d '\r' <<<"$preflight_headers")" \
+    || fail "OPTIONS /api/tools is missing the allowed methods"
+grep -qi '^access-control-allow-headers: Content-Type, Authorization' \
+    <<<"$(tr -d '\r' <<<"$preflight_headers")" \
+    || fail "OPTIONS /api/tools is missing the allowed headers"
+
+echo "== CORS OPTIONS /api/tools"
+pass "CORS OPTIONS /api/tools (preflight -> 204 + allow-methods/headers)"
 
 # ---------------------------------------------------------------------------
 # Skills: list, filters, detail, editor save, template create

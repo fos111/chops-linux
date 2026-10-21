@@ -16,6 +16,10 @@ func configure(_ app: Application, runtime: ChopsdRuntime) throws {
     // legitimate saves.
     app.routes.defaultMaxBodySize = "16mb"
 
+    // The Tauri webview is a cross-origin client (tauri://localhost -> 127.0.0.1).
+    // Keep it before ErrorMiddleware so even error responses carry CORS headers.
+    app.middleware.use(TauriCORSMiddleware(), at: .beginning)
+
     routes(app, runtime: runtime)
 }
 
