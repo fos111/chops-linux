@@ -17,12 +17,19 @@ let package = Package(
         .library(name: "ChopsCore", targets: ["chopscore"]),
         .executable(name: "chopsd", targets: ["chopsd"]),
     ],
+    dependencies: [
+        // GRDB 7 — the SQLite layer that replaces SwiftData on Linux (T05).
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+    ],
     targets: [
         // Portable core. Batch 1 ports the frozen macOS logic here field-for-field
         // (GRDB store, parsers/templates/search, scanner + Linux tool-path tables,
         // one-shot agent transports, SSH/registry, file watcher + logging).
         .target(
             name: "chopscore",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
             path: "Core/ChopsCore/Sources/chopscore"
         ),
         // chopsd — binds 127.0.0.1:47115 (env override CHOPSD_PORT); serves the
