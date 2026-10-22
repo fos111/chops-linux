@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import type { SkillCreateRequest } from "$lib/api";
   import { app } from "$lib/app.svelte.js";
   import { filterTitle } from "$lib/filters";
   import { buildPaletteCommands, isPaletteShortcut, isSidebarShortcut, type PaletteCommand } from "$lib/palette";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
-  import DetailPlaceholder from "$lib/components/DetailPlaceholder.svelte";
+  import ConfirmDiscardDialog from "$lib/components/ConfirmDiscardDialog.svelte";
+  import NewSkillSheet from "$lib/components/NewSkillSheet.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
+  import SkillEditor from "$lib/components/SkillEditor.svelte";
   import SkillList from "$lib/components/SkillList.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
 
@@ -17,6 +20,8 @@
       app.filter.type === "collection" ||
       app.filter.type === "server",
   );
+
+  let sheetOpen = $state(false);
 
   function handleGlobalKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
@@ -30,17 +35,36 @@
     }
   }
 
+  function handleBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!app.unsaved) return;
+    event.preventDefault();
+    event.returnValue = "";
+  }
+
   function runPaletteCommand(command: PaletteCommand): void {
     if (command.action.type === "navigate") {
       app.runPaletteAction(command.action.filter);
     }
   }
 
+  function saveCurrent(content: string): Promise<unknown> {
+    const skill = app.selectedSkill;
+    if (!skill) return Promise.reject(new Error("No skill selected"));
+    return app.saveSkill(skill.id, content);
+  }
+
+  async function createItem(request: SkillCreateRequest): Promise<void> {
+    await app.createSkill(request);
+    sheetOpen = false;
+  }
+
   onMount(() => {
     const stop = app.start();
     window.addEventListener("keydown", handleGlobalKeydown);
+    window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       window.removeEventListener("keydown", handleGlobalKeydown);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
       stop();
     };
   });
@@ -52,7 +76,7 @@
       tools={app.tools}
       skills={app.skills}
       filter={app.filter}
-      onselect={(filter) => app.setFilter(filter)}
+      onselect={(filter) => app.requestSetFilter(filter)}
     />
   </aside>
 
@@ -65,15 +89,23 @@
       {showTypeBadge}
       loading={app.loading}
       error={app.loadError}
-      onselect={(id) => app.selectSkill(id)}
+      onselect={(id) => app.requestSelectSkill(id)}
       onsearch={(text) => app.setSearchText(text)}
       onretry={() => app.retry()}
       ontoggleSidebar={() => app.toggleSidebar()}
+      onnew={() => (sheetOpen = true)}
     />
   </div>
 
   <div class="shell-detail">
-    <DetailPlaceholder skill={app.selectedSkill} tools={app.tools} />
+    <SkillEditor
+      skill={app.selectedSkill}
+      tools={app.tools}
+      homeDirectory={app.settings?.homeDirectory ?? null}
+      onsave={saveCurrent}
+      onunsaved={(dirty) => app.setUnsaved(dirty)}
+      onnew={() => (sheetOpen = true)}
+    />
   </div>
 
   <footer class="shell-status">
@@ -94,6 +126,19 @@
   {commands}
   onaction={runPaletteCommand}
   onclose={() => app.closePalette()}
+/>
+
+<NewSkillSheet
+  open={sheetOpen}
+  tools={app.tools}
+  oncreate={createItem}
+  onclose={() => (sheetOpen = false)}
+/>
+
+<ConfirmDiscardDialog
+  open={app.pendingNavigation !== null}
+  ondiscard={() => app.confirmDiscard()}
+  oncancel={() => app.cancelDiscard()}
 />
 
 <style>

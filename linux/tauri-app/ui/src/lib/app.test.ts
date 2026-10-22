@@ -16,6 +16,9 @@ interface FakeClient {
   close: ReturnType<typeof vi.fn>;
   listTools: ReturnType<typeof vi.fn>;
   listSkills: ReturnType<typeof vi.fn>;
+  getSkill: ReturnType<typeof vi.fn>;
+  updateSkill: ReturnType<typeof vi.fn>;
+  createSkill: ReturnType<typeof vi.fn>;
   getSettings: ReturnType<typeof vi.fn>;
   updateSettings: ReturnType<typeof vi.fn>;
   tools: Tool[];
@@ -50,6 +53,20 @@ function makeFakeClient(overrides: Partial<ChopsApi> = {}): FakeClient {
 
   const listTools = vi.fn(async () => tools);
   const listSkills = vi.fn(async () => skills);
+  const getSkill = vi.fn(
+    async (id: number) => skills.find((skill) => skill.id === id) ?? skills[0],
+  );
+  const updateSkill = vi.fn(async (id: number, content: string) => ({
+    ...(skills.find((skill) => skill.id === id) ?? skills[0]),
+    content,
+  }));
+  const createSkill = vi.fn(async (request: { name: string; tool: string; kind?: string }) =>
+    makeSkill({
+      name: request.name,
+      toolSources: [request.tool],
+      kind: request.kind ?? "skill",
+    }),
+  );
   const getSettings = vi.fn(async () => settings);
   const updateSettings = vi.fn(async (patch: Partial<Settings>) => ({
     ...settings,
@@ -59,6 +76,9 @@ function makeFakeClient(overrides: Partial<ChopsApi> = {}): FakeClient {
   const client: ChopsApi = {
     listTools,
     listSkills,
+    getSkill,
+    updateSkill,
+    createSkill,
     getSettings,
     updateSettings,
     connectEvents: (nextHandlers) => {
@@ -74,6 +94,9 @@ function makeFakeClient(overrides: Partial<ChopsApi> = {}): FakeClient {
     close,
     listTools,
     listSkills,
+    getSkill,
+    updateSkill,
+    createSkill,
     getSettings,
     updateSettings,
     tools,

@@ -12,11 +12,13 @@ import {
   type EventConnection,
   type Settings,
   type Skill,
+  type SkillCreateRequest,
   type ThemeMode,
   type Tool,
   type WsEvent,
 } from "./api";
 import {
+  filterKey,
   filterSkills,
   reconcileSelection,
   sortSkills,
@@ -28,6 +30,11 @@ function toMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
 }
+
+/** Deferred navigation while the editor has unsaved changes. */
+export type PendingNavigation =
+  | { type: "select"; id: number }
+  | { type: "filter"; filter: SidebarFilter };
 
 export interface ChopsAppOptions {
   /** Debounce for `file-changed` bursts; 150 ms matches a single editor write. */
@@ -59,6 +66,8 @@ export class ChopsApp {
 
   paletteOpen = $state(false);
   sidebarVisible = $state(true);
+  /** Non-null while a dirty editor is blocking a selection/filter change. */
+  pendingNavigation = $state<PendingNavigation | null>(null);
 
   visibleSkills = $derived(filterSkills(this.skills, this.filter, this.searchText));
   selectedSkill = $derived(
@@ -202,6 +211,49 @@ export class ChopsApp {
     this.selectedId = reconcileSelection(this.visibleSkills, this.selectedId);
   }
 
+  /**
+   * User-initiated navigation (list click, sidebar filter, palette). Mirrors the
+   * macOS guard behavior: if the editor is dirty the change is parked until the
+   * user chooses Discard or Cancel in `pendingNavigation`.
+   */
+  requestSelectSkill(id: number): void {
+    if (id === this.selectedId) return;
+    if (this.unsaved) {
+      this.pendingNavigation = { type: "select", id };
+      return;
+    }
+    this.selectSkill(id);
+  }
+
+  requestSetFilter(filter: SidebarFilter): void {
+    if (filterKey(filter) === filterKey(this.filter)) {
+      this.setFilter(filter);
+      return;
+    }
+    if (this.unsaved) {
+      this.pendingNavigation = { type: "filter", filter };
+      return;
+    }
+    this.setFilter(filter);
+  }
+
+  /** Applies the parked navigation (the editor drops its draft on load). */
+  confirmDiscard(): void {
+    const pending = this.pendingNavigation;
+    this.pendingNavigation = null;
+    if (!pending) return;
+    this.unsaved = false;
+    if (pending.type === "select") {
+      this.selectSkill(pending.id);
+    } else {
+      this.setFilter(pending.filter);
+    }
+  }
+
+  cancelDiscard(): void {
+    this.pendingNavigation = null;
+  }
+
   setSearchText(text: string): void {
     this.searchText = text;
   }
@@ -223,8 +275,47 @@ export class ChopsApp {
   }
 
   runPaletteAction(filter: SidebarFilter): void {
-    this.setFilter(filter);
     this.paletteOpen = false;
+    this.requestSetFilter(filter);
+  }
+
+  /** Saves the complete Markdown file through chopsd and refreshes the list row. */
+  async saveSkill(id: number, content: string): Promise<Skill> {
+    const saved = await this.#client.updateSkill(id, content);
+    this.#replaceSkill(saved);
+    this.unsaved = false;
+    return saved;
+  }
+
+  /** Creates a template file in chopsd, then selects it like the macOS sheet. */
+  async createSkill(request: SkillCreateRequest): Promise<Skill> {
+    const created = await this.#client.createSkill(request);
+    this.#replaceSkill(created);
+    this.unsaved = false;
+    switch (created.kind) {
+      case "agent":
+        this.setFilter({ type: "allAgents" });
+        break;
+      case "rule":
+        this.setFilter({ type: "allRules" });
+        break;
+      default:
+        this.setFilter({ type: "allSkills" });
+        break;
+    }
+    this.selectSkill(created.id);
+    return created;
+  }
+
+  #replaceSkill(skill: Skill): void {
+    const index = this.skills.findIndex((row) => row.id === skill.id);
+    const next = [...this.skills];
+    if (index >= 0) {
+      next[index] = skill;
+    } else {
+      next.push(skill);
+    }
+    this.skills = sortSkills(next);
   }
 
   setUnsaved(unsaved: boolean): void {

@@ -14,6 +14,7 @@
     onsearch,
     onretry,
     ontoggleSidebar,
+    onnew,
   }: {
     skills: Skill[];
     title: string;
@@ -26,6 +27,7 @@
     onsearch: (text: string) => void;
     onretry: () => void;
     ontoggleSidebar: () => void;
+    onnew?: () => void;
   } = $props();
 
   const emptyTitle = $derived(
@@ -52,6 +54,19 @@
     <span class="result-count" aria-label={`${skills.length} items`}>{skills.length}</span>
     {#if loading}
       <span class="refreshing" role="status">Refreshing…</span>
+    {/if}
+    {#if onnew}
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="New item"
+        title="New item"
+        onclick={onnew}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M8 3v10M3 8h10" />
+        </svg>
+      </button>
     {/if}
   </header>
 

@@ -2,8 +2,8 @@
 // (`.omo/plans/debian-linux-port.md`, mirrored by `Core/chopsd/DTO.swift`).
 //
 // Every path here exists in the contract table; nothing is invented. The front-end
-// never touches skill files directly: reads come from `/api/skills` and the only
-// writes wired in this task are settings (theme).
+// never touches skill files directly: reads come from `/api/skills`, saves go through
+// `PUT /api/skills/{id}`, and creation goes through `POST /api/skills`.
 
 export const DEFAULT_API_BASE = "http://127.0.0.1:47115";
 
@@ -71,6 +71,13 @@ export interface SettingsPatch {
   theme?: ThemeMode;
 }
 
+/** `POST /api/skills` body (`SkillCreateRequest` in chopsd). */
+export interface SkillCreateRequest {
+  name: string;
+  tool: string;
+  kind?: string;
+}
+
 export type WsEventType = "rescan" | "file-changed" | "assist-status";
 
 /** One `/ws` frame (`WSEvent` in chopsd). */
@@ -131,6 +138,11 @@ export class ApiError extends Error {
 export interface ChopsApi {
   listTools: () => Promise<Tool[]>;
   listSkills: (params?: { tool?: string; q?: string }) => Promise<Skill[]>;
+  getSkill: (id: number) => Promise<Skill>;
+  /** Writes the complete Markdown file (editor save, macOS parity). */
+  updateSkill: (id: number, content: string) => Promise<Skill>;
+  /** Creates the boilerplate file through chopsd; the UI never touches the filesystem. */
+  createSkill: (request: SkillCreateRequest) => Promise<Skill>;
   getSettings: () => Promise<Settings>;
   updateSettings: (patch: SettingsPatch) => Promise<Settings>;
   connectEvents: (handlers: EventHandlers) => EventConnection;
@@ -199,6 +211,24 @@ export function createApiClient(options: ApiClientOptions = {}): ChopsApi {
       if (params.q) query.set("q", params.q);
       const suffix = query.toString();
       return request<Skill[]>(`/api/skills${suffix ? `?${suffix}` : ""}`);
+    },
+
+    getSkill(id) {
+      return request<Skill>(`/api/skills/${id}`);
+    },
+
+    updateSkill(id, content) {
+      return request<Skill>(`/api/skills/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      });
+    },
+
+    createSkill(createRequest) {
+      return request<Skill>("/api/skills", {
+        method: "POST",
+        body: JSON.stringify(createRequest),
+      });
     },
 
     getSettings() {
