@@ -14,6 +14,7 @@
     ThemeMode,
     Tool,
   } from "$lib/api";
+  import { focusTrap } from "$lib/focusTrap";
   import { remoteServersEnabled } from "$lib/remoteFlag";
   import RemoteServersPanel from "./RemoteServersPanel.svelte";
 
@@ -216,6 +217,7 @@
       aria-modal="true"
       aria-labelledby="settings-title"
       tabindex="-1"
+      use:focusTrap
     >
       <header class="sheet-header">
         <h2 id="settings-title">Settings</h2>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { focusTrap } from "$lib/focusTrap";
+
   let {
     open,
     ondiscard,
@@ -18,6 +20,8 @@
       aria-modal="true"
       aria-labelledby="discard-title"
       aria-describedby="discard-detail"
+      tabindex="-1"
+      use:focusTrap
     >
       <h2 id="discard-title">Discard unsaved changes?</h2>
       <p id="discard-detail">

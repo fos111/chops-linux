@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { focusTrap } from "$lib/focusTrap";
   import {
     filterPaletteCommands,
     moveSelection,
@@ -84,7 +85,14 @@
       if (event.target === event.currentTarget) onclose();
     }}
   >
-    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div
+      class="palette"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+      tabindex="-1"
+      use:focusTrap
+    >
       <div class="palette-search">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
           <circle cx="7" cy="7" r="4.5" />

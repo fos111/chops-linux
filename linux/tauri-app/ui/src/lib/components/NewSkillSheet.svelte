@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { SkillCreateRequest, Tool } from "$lib/api";
+  import { focusTrap } from "$lib/focusTrap";
   import {
     buildBoilerplate,
     creatableTools,
@@ -88,6 +89,8 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-item-title"
+      tabindex="-1"
+      use:focusTrap
     >
       <form
         onsubmit={(event) => {

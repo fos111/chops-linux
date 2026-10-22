@@ -4,6 +4,7 @@
   // row -> install confirmation sheet (select targets -> Install). Traffic goes
   // through chopsd (`/api/registry/*`), never the public network.
   import type { RegistryInstallRequest, RegistrySkill, Tool } from "$lib/api";
+  import { focusTrap } from "$lib/focusTrap";
   import {
     isBrowsing,
     formattedInstalls,
@@ -240,6 +241,7 @@
       aria-modal="true"
       aria-labelledby="registry-title"
       tabindex="-1"
+      use:focusTrap
     >
       <header class="registry-header">
         <button
