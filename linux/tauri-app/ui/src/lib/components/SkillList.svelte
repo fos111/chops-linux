@@ -15,6 +15,7 @@
     onretry,
     ontoggleSidebar,
     onnew,
+    onremoveMember,
   }: {
     skills: Skill[];
     title: string;
@@ -28,6 +29,8 @@
     onretry: () => void;
     ontoggleSidebar: () => void;
     onnew?: () => void;
+    /** Collection-detail mode: rows show a "remove from collection" button. */
+    onremoveMember?: (id: number) => void;
   } = $props();
 
   const emptyTitle = $derived(
@@ -113,6 +116,7 @@
           {showTypeBadge}
           selected={skill.id === selectedId}
           {onselect}
+          onremove={onremoveMember}
         />
       {/each}
     </ul>

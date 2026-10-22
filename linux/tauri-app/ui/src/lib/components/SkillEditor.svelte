@@ -1,9 +1,18 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { Skill, Tool } from "$lib/api";
+  import type {
+    AssistAcceptResponse,
+    AssistRejectResponse,
+    AssistRequest,
+    AssistResponse,
+    CollectionSummary,
+    Skill,
+    Tool,
+  } from "$lib/api";
   import { abbreviatePath, composeSkillMarkdown } from "$lib/editor";
   import { kindLabel, skillKind } from "$lib/filters";
   import { renderMarkdown } from "$lib/markdown";
+  import ComposePanel from "./ComposePanel.svelte";
   import KindIcon from "./KindIcon.svelte";
   import SkillMetadataBar from "./SkillMetadataBar.svelte";
 
@@ -11,16 +20,28 @@
     skill,
     tools,
     homeDirectory = null,
+    collections = null,
     onsave,
     onunsaved,
     onnew,
+    ontoggleCollection,
+    onassist,
+    onacceptassist,
+    onrejectassist,
   }: {
     skill: Skill | null;
     tools: Tool[];
     homeDirectory?: string | null;
+    /** Enables the metadata-bar collection picker when provided. */
+    collections?: CollectionSummary[] | null;
     onsave: (content: string) => Promise<unknown>;
     onunsaved?: (dirty: boolean) => void;
     onnew?: () => void;
+    ontoggleCollection?: (collection: CollectionSummary) => void;
+    /** Enables the compose panel when all three assist callbacks are provided. */
+    onassist?: (request: AssistRequest) => Promise<AssistResponse>;
+    onacceptassist?: (pendingId: string) => Promise<AssistAcceptResponse>;
+    onrejectassist?: (pendingId: string) => Promise<AssistRejectResponse>;
   } = $props();
 
   type EditorMode = "edit" | "preview";
@@ -31,12 +52,18 @@
   let mode = $state<EditorMode>("edit");
   let saving = $state(false);
   let error = $state<string | null>(null);
+  let composeOpen = $state(false);
 
   const kind = $derived(skill ? skillKind(skill) : "skill");
   const dirty = $derived(skill !== null && draft !== original);
   const previewHtml = $derived(mode === "preview" ? renderMarkdown(draft) : "");
   const pathLabel = $derived(
     skill ? abbreviatePath(skill.remotePath ?? skill.filePath, homeDirectory) : "",
+  );
+  const composeAvailable = $derived(
+    onassist !== undefined &&
+      onacceptassist !== undefined &&
+      onrejectassist !== undefined,
   );
 
   // Reload only when the selected row changes. Live WS refreshes replace the DTO but
@@ -49,6 +76,7 @@
     draft = original;
     error = null;
     mode = "edit";
+    composeOpen = false;
   });
 
   $effect(() => {
@@ -81,6 +109,50 @@
     if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
     event.preventDefault();
     void save();
+  }
+
+  async function sendAssist(request: AssistRequest): Promise<AssistResponse> {
+    if (!onassist) throw new Error("Assist is unavailable");
+    return onassist(request);
+  }
+
+  async function acceptAssist(pendingId: string): Promise<AssistAcceptResponse> {
+    if (!onacceptassist) throw new Error("Assist is unavailable");
+    return onacceptassist(pendingId);
+  }
+
+  async function rejectAssist(pendingId: string): Promise<AssistRejectResponse> {
+    if (!onrejectassist) throw new Error("Assist is unavailable");
+    return onrejectassist(pendingId);
+  }
+
+  /**
+   * On accept chopsd has already written the file and re-scanned it. Prefer the
+   * returned skill DTO (authoritative parsed frontmatter); fall back to the
+   * reviewed full file when the path still belongs to the open editor and the
+   * scan did not return the row.
+   */
+  function applyAccepted(
+    response: AssistAcceptResponse,
+    fullFile: string,
+  ): void {
+    if (!skill) return;
+    if (response.skill && response.skill.id === skill.id) {
+      const next = composeSkillMarkdown(response.skill);
+      draft = next;
+      original = next;
+      error = null;
+      mode = "edit";
+      return;
+    }
+    const samePath =
+      response.path === skill.filePath || response.path === skill.remotePath;
+    if (samePath && fullFile) {
+      draft = fullFile;
+      original = fullFile;
+      error = null;
+      mode = "edit";
+    }
   }
 </script>
 
@@ -134,6 +206,18 @@
         <span class="save-error" role="alert" title={error}>Save failed</span>
       {/if}
 
+      {#if composeAvailable}
+        <button
+          type="button"
+          class="compose-button"
+          aria-label="Compose with AI"
+          aria-pressed={composeOpen}
+          onclick={() => (composeOpen = !composeOpen)}
+        >
+          Compose
+        </button>
+      {/if}
+
       <button
         type="button"
         class="save-button"
@@ -164,11 +248,24 @@
       </div>
     {/if}
 
+    {#if composeOpen && composeAvailable}
+      <ComposePanel
+        skillId={skill.id}
+        skillName={skill.name || "Untitled"}
+        content={draft}
+        onsend={sendAssist}
+        onaccept={acceptAssist}
+        onreject={rejectAssist}
+        onaccepted={applyAccepted}
+        onclose={() => (composeOpen = false)}
+      />
+    {/if}
+
     {#if error}
       <p class="save-error-detail" role="alert">{error}</p>
     {/if}
 
-    <SkillMetadataBar {skill} {tools} {homeDirectory} />
+    <SkillMetadataBar {skill} {tools} {homeDirectory} {collections} {ontoggleCollection} />
   {/if}
 </section>
 
@@ -334,6 +431,25 @@
 
   .save-button:not(:disabled):hover {
     background: var(--hover);
+  }
+
+  .compose-button {
+    padding: 3px 9px;
+    border: 1px solid var(--border-strong);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+  }
+
+  .compose-button:hover {
+    background: var(--hover);
+  }
+
+  .compose-button[aria-pressed="true"] {
+    background: var(--selected);
+    color: var(--accent-strong);
   }
 
   kbd {

@@ -100,7 +100,273 @@ describe("REST client", () => {
     expect((error as ApiError).status).toBe(0);
     expect((error as ApiError).message).toContain(DEFAULT_API_BASE);
   });
+
+  it("GET/POST /api/collections and DELETE /api/collections/{id}", async () => {
+    const collection = {
+      id: 1,
+      name: "Work",
+      icon: "folder",
+      sortOrder: 0,
+      skillCount: 2,
+    };
+    const responses = [[collection], collection, { deleted: true }];
+    const { calls, fetchImpl } = recordingFetch(() =>
+      jsonResponse(responses[calls.length - 1] ?? {}),
+    );
+    const client = createApiClient({ fetch: fetchImpl });
+
+    await expect(client.listCollections()).resolves.toEqual([collection]);
+    expect(calls[0].url).toBe(`${DEFAULT_API_BASE}/api/collections`);
+
+    await expect(
+      client.createCollection({ name: "Work", icon: "star" }),
+    ).resolves.toEqual(collection);
+    expect(calls[1].init?.method).toBe("POST");
+    expect(calls[1].init?.body).toBe(
+      JSON.stringify({ name: "Work", icon: "star" }),
+    );
+
+    await expect(client.deleteCollection(7)).resolves.toEqual({
+      deleted: true,
+    });
+    expect(calls[2].init?.method).toBe("DELETE");
+    expect(calls[2].url).toBe(`${DEFAULT_API_BASE}/api/collections/7`);
+  });
+
+  it("registry trending, search, and install use the chopsd mirror", async () => {    const rows = [makeRegistrySkill()];
+    const installed = {
+      installed: true,
+      skillName: "demo",
+      path: "/home/test/.agents/skills/demo/SKILL.md",
+      targets: ["claude"],
+      skill: makeSkill(),
+    };
+    const responses = [rows, rows, installed];
+    const { calls, fetchImpl } = recordingFetch(() =>
+      jsonResponse(responses[calls.length - 1] ?? {}),
+    );
+    const client = createApiClient({ fetch: fetchImpl });
+
+    await expect(client.listTrending()).resolves.toEqual(rows);
+    expect(calls[0].url).toBe(`${DEFAULT_API_BASE}/api/registry/trending`);
+
+    await expect(client.searchRegistry("react ui")).resolves.toEqual(rows);
+    expect(calls[1].url).toBe(
+      `${DEFAULT_API_BASE}/api/registry/search?q=react+ui`,
+    );
+
+    await expect(
+      client.installRegistry({
+        skillId: "demo",
+        name: "Demo",
+        source: "demo/repo",
+        targets: ["claude"],
+      }),
+    ).resolves.toEqual(installed);
+    expect(calls[2].init?.method).toBe("POST");
+    expect(calls[2].url).toBe(`${DEFAULT_API_BASE}/api/registry/install`);
+    expect(JSON.parse(String(calls[2].init?.body))).toEqual({
+      skillId: "demo",
+      name: "Demo",
+      source: "demo/repo",
+      targets: ["claude"],
+    });
+  });
+
+  it("collections detail and membership helpers ride the join-table routes", async () => {
+    const detail = {
+      collection: {
+        id: 1,
+        name: "Work",
+        icon: "folder",
+        sortOrder: 0,
+        skillCount: 1,
+      },
+      skills: [makeSkill()],
+    };
+    const responses = [detail, detail, detail];
+    const { calls, fetchImpl } = recordingFetch(() =>
+      jsonResponse(responses[calls.length - 1] ?? {}),
+    );
+    const client = createApiClient({ fetch: fetchImpl });
+
+    await expect(client.getCollection(1)).resolves.toEqual(detail);
+    expect(calls[0].url).toBe(`${DEFAULT_API_BASE}/api/collections/1`);
+
+    await expect(client.addCollectionSkill(1, 42)).resolves.toEqual(detail);
+    expect(calls[1].init?.method).toBe("POST");
+    expect(calls[1].url).toBe(`${DEFAULT_API_BASE}/api/collections/1/skills`);
+    expect(calls[1].init?.body).toBe(JSON.stringify({ skillId: 42 }));
+
+    await expect(client.removeCollectionSkill(1, 42)).resolves.toEqual(detail);
+    expect(calls[2].init?.method).toBe("DELETE");
+    expect(calls[2].url).toBe(
+      `${DEFAULT_API_BASE}/api/collections/1/skills/42`,
+    );
+  });
+
+  it("POST /api/assist sends only the frozen contract fields (no model)", async () => {
+    const response = {
+      pendingId: "pending-1",
+      summary: "Updated the heading.",
+      fullFile: "# Alpha\n\nBody.",
+      path: "/home/test/.claude/skills/skill-1.md",
+      agent: "codex",
+      skillId: 1,
+    };
+    const { calls, fetchImpl } = recordingFetch(() => jsonResponse(response));
+    const client = createApiClient({ fetch: fetchImpl });
+
+    await expect(
+      client.assist({
+        skillId: 1,
+        prompt: "Tighten the wording",
+        agent: "codex",
+        content: "# Alpha\n",
+      }),
+    ).resolves.toEqual(response);
+
+    expect(calls[0].url).toBe(`${DEFAULT_API_BASE}/api/assist`);
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      skillId: 1,
+      prompt: "Tighten the wording",
+      agent: "codex",
+      content: "# Alpha\n",
+    });
+  });
+
+  it("accepts and rejects pending assist writes on the diff gate", async () => {
+    const accepted = {
+      accepted: true,
+      pendingId: "pending-1",
+      path: "/home/test/.claude/skills/skill-1.md",
+      skill: makeSkill({ id: 1 }),
+    };
+    const rejected = { rejected: true, pendingId: "pending-1" };
+    const responses = [accepted, rejected];
+    const { calls, fetchImpl } = recordingFetch(() =>
+      jsonResponse(responses[calls.length - 1] ?? {}),
+    );
+    const client = createApiClient({ fetch: fetchImpl });
+
+    await expect(client.acceptAssist("pending-1")).resolves.toEqual(accepted);
+    expect(calls[0].init?.method).toBe("POST");
+    expect(calls[0].url).toBe(`${DEFAULT_API_BASE}/api/assist/pending-1/accept`);
+
+    await expect(client.rejectAssist("pending-1")).resolves.toEqual(rejected);
+    expect(calls[1].init?.method).toBe("POST");
+    expect(calls[1].url).toBe(
+      `${DEFAULT_API_BASE}/api/assist/pending-1/reject`,
+    );
+  });
+
+  it("remote server CRUD uses the SSH routes", async () => {
+    const server = {
+      id: "srv-1",
+      label: "Production",
+      host: "192.168.1.100",
+      port: 22,
+      username: "root",
+      skillsBasePath: "~/.hermes/skills",
+      sshKeyPath: null,
+      lastSyncDate: null,
+      lastSyncError: null,
+    };
+    const responses = [[server], server, server, { deleted: true }];
+    const { calls, fetchImpl } = recordingFetch(() =>
+      jsonResponse(responses[calls.length - 1] ?? {}),
+    );
+    const client = createApiClient({ fetch: fetchImpl });
+
+    await expect(client.listRemoteServers()).resolves.toEqual([server]);
+    expect(calls[0].url).toBe(`${DEFAULT_API_BASE}/api/remote/servers`);
+
+    const request = {
+      label: "Production",
+      host: "192.168.1.100",
+      port: 22,
+      username: "root",
+      skillsBasePath: "~/.hermes/skills",
+    };
+    await expect(client.createRemoteServer(request)).resolves.toEqual(server);
+    expect(calls[1].init?.method).toBe("POST");
+    expect(calls[1].url).toBe(`${DEFAULT_API_BASE}/api/remote/servers`);
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual(request);
+
+    await expect(
+      client.updateRemoteServer("srv-1", { ...request, label: "Staging" }),
+    ).resolves.toEqual(server);
+    expect(calls[2].init?.method).toBe("PUT");
+    expect(calls[2].url).toBe(
+      `${DEFAULT_API_BASE}/api/remote/servers/srv-1`,
+    );
+
+    await expect(client.deleteRemoteServer("srv-1")).resolves.toEqual({
+      deleted: true,
+    });
+    expect(calls[3].init?.method).toBe("DELETE");
+    expect(calls[3].url).toBe(
+      `${DEFAULT_API_BASE}/api/remote/servers/srv-1`,
+    );
+  });
+
+  it("browses and installs remote skills over the SSH bridge", async () => {
+    const browse = {
+      serverId: "srv-1",
+      skills: [
+        {
+          path: "skills/r-one/SKILL.md",
+          name: "r-one",
+          description: "remote fixture",
+          content: "# R One",
+        },
+      ],
+      lastSyncDate: "2026-10-22T12:00:00Z",
+    };
+    const installed = {
+      installed: true,
+      skillName: "r-one",
+      path: "/home/test/.agents/skills/r-one/SKILL.md",
+      targets: ["claude"],
+      skill: null,
+    };
+    const responses = [browse, installed];
+    const { calls, fetchImpl } = recordingFetch(() =>
+      jsonResponse(responses[calls.length - 1] ?? {}),
+    );
+    const client = createApiClient({ fetch: fetchImpl });
+
+    await expect(client.browseRemote("srv-1")).resolves.toEqual(browse);
+    expect(calls[0].url).toBe(`${DEFAULT_API_BASE}/api/remote/browse`);
+    expect(calls[0].init?.method).toBe("POST");
+    expect(calls[0].init?.body).toBe(JSON.stringify({ serverId: "srv-1" }));
+
+    await expect(
+      client.installRemote({
+        serverId: "srv-1",
+        remotePath: "skills/r-one/SKILL.md",
+      }),
+    ).resolves.toEqual(installed);
+    expect(calls[1].url).toBe(`${DEFAULT_API_BASE}/api/remote/install`);
+    expect(calls[1].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({
+      serverId: "srv-1",
+      remotePath: "skills/r-one/SKILL.md",
+    });
+  });
 });
+
+function makeRegistrySkill(overrides: Record<string, unknown> = {}) {
+  return {
+    skillId: "demo",
+    name: "Demo",
+    installs: 5,
+    source: "demo/repo",
+    isOfficial: false,
+    ...overrides,
+  };
+}
 
 class FakeSocket implements WebSocketLike {
   static instances: FakeSocket[] = [];

@@ -7,10 +7,24 @@
 
 import {
   createApiClient,
+  type AssistAcceptResponse,
+  type AssistRejectResponse,
+  type AssistRequest,
+  type AssistResponse,
   type ChopsApi,
+  type CollectionDetail,
+  type CollectionSummary,
   type ConnectionState,
   type EventConnection,
+  type RegistryInstallRequest,
+  type RegistryInstallResponse,
+  type RegistrySkill,
+  type RemoteBrowseResponse,
+  type RemoteInstallRequest,
+  type RemoteServer,
+  type RemoteServerRequest,
   type Settings,
+  type SettingsPatch,
   type Skill,
   type SkillCreateRequest,
   type ThemeMode,
@@ -24,6 +38,7 @@ import {
   sortSkills,
   type SidebarFilter,
 } from "./filters";
+import { filterCollectionDetail, sortCollections } from "./collections";
 import { applyTheme, resolveTheme, systemPrefersDark, watchSystemTheme } from "./theme";
 
 function toMessage(error: unknown): string {
@@ -50,6 +65,14 @@ export class ChopsApp {
   tools = $state<Tool[]>([]);
   skills = $state<Skill[]>([]);
   settings = $state<Settings | null>(null);
+  /** Sidebar collections (`GET /api/collections`, sorted by sortOrder). */
+  collections = $state<CollectionSummary[]>([]);
+  /**
+   * Server-authoritative members of the collection filter currently active
+   * (`GET /api/collections/{id}`); null while loading, with its own error lane.
+   */
+  collectionDetail = $state<CollectionDetail | null>(null);
+  collectionsError = $state<string | null>(null);
 
   filter = $state<SidebarFilter>({ type: "allSkills" });
   searchText = $state("");
@@ -68,8 +91,20 @@ export class ChopsApp {
   sidebarVisible = $state(true);
   /** Non-null while a dirty editor is blocking a selection/filter change. */
   pendingNavigation = $state<PendingNavigation | null>(null);
+  collectionDetailError = $state<string | null>(null);
 
-  visibleSkills = $derived(filterSkills(this.skills, this.filter, this.searchText));
+  /** Skills actually shown in the list column for the active filter. */
+  visibleSkills = $derived.by(() => {
+    if (this.filter.type === "collection" && this.collectionDetail) {
+      return sortSkills(
+        filterCollectionDetail(
+          this.collectionDetail.skills,
+          this.searchText,
+        ),
+      );
+    }
+    return filterSkills(this.skills, this.filter, this.searchText);
+  });
   selectedSkill = $derived(
     this.skills.find((skill) => skill.id === this.selectedId) ?? null,
   );
@@ -112,11 +147,13 @@ export class ChopsApp {
   }
 
   async #bootstrap(): Promise<void> {
-    const [settingsResult, toolsResult, skillsResult] = await Promise.allSettled([
-      this.#client.getSettings(),
-      this.#client.listTools(),
-      this.#client.listSkills(),
-    ]);
+    const [settingsResult, toolsResult, skillsResult, collectionsResult] =
+      await Promise.allSettled([
+        this.#client.getSettings(),
+        this.#client.listTools(),
+        this.#client.listSkills(),
+        this.#client.listCollections(),
+      ]);
 
     if (settingsResult.status === "fulfilled") {
       this.settings = settingsResult.value;
@@ -133,6 +170,12 @@ export class ChopsApp {
     if (skillsResult.status === "fulfilled") {
       this.skills = sortSkills(skillsResult.value);
       this.selectedId = reconcileSelection(this.visibleSkills, this.selectedId);
+    }
+
+    if (collectionsResult.status === "fulfilled") {
+      this.collections = sortCollections(collectionsResult.value);
+    } else {
+      this.collectionsError = toMessage(collectionsResult.reason);
     }
 
     const failure =
@@ -209,6 +252,46 @@ export class ChopsApp {
   setFilter(filter: SidebarFilter): void {
     this.filter = filter;
     this.selectedId = reconcileSelection(this.visibleSkills, this.selectedId);
+    this.#syncCollectionDetail(filter);
+  }
+
+  /**
+   * Collection filters render the server-authoritative member list
+   * (`GET /api/collections/{id}`); every other filter clears it.
+   */
+  #syncCollectionDetail(filter: SidebarFilter): void {
+    if (filter.type !== "collection") {
+      this.collectionDetail = null;
+      this.collectionDetailError = null;
+      return;
+    }
+    const collection = this.collections.find((row) => row.name === filter.name);
+    const key = filterKey(filter);
+    void this.#loadCollectionDetail(collection?.id ?? null, key);
+  }
+
+  async #loadCollectionDetail(
+    id: number | null,
+    filterKeyValue: string,
+  ): Promise<void> {
+    if (id === null) {
+      // The filter points at a collection that vanished from the sidebar list
+      // (e.g. deleted): no members to show, so the list falls back to the local
+      // name filter and the detail lane records why.
+      this.collectionDetail = null;
+      this.collectionDetailError = null;
+      return;
+    }
+    this.collectionDetail = null;
+    try {
+      const detail = await this.#client.getCollection(id);
+      if (filterKey(this.filter) !== filterKeyValue) return; // stale response
+      this.collectionDetail = detail;
+      this.selectedId = reconcileSelection(this.visibleSkills, this.selectedId);
+    } catch (error) {
+      if (filterKey(this.filter) !== filterKeyValue) return;
+      this.collectionDetailError = toMessage(error);
+    }
   }
 
   /**
@@ -318,8 +401,204 @@ export class ChopsApp {
     this.skills = sortSkills(next);
   }
 
+  // MARK: Assist (one compose turn + the diff-review gate)
+
+  /** `POST /api/assist`: the only compose path, called from an explicit Send click. */
+  assist(request: AssistRequest): Promise<AssistResponse> {
+    return this.#client.assist(request);
+  }
+
+  /**
+   * `POST /api/assist/{id}/accept`: chopsd writes the pending file (local or over
+   * SSH) and returns the re-scanned skill row.
+   */
+  async acceptAssist(pendingId: string): Promise<AssistAcceptResponse> {
+    const response = await this.#client.acceptAssist(pendingId);
+    if (response.skill) {
+      this.#replaceSkill(response.skill);
+      if (this.selectedId === response.skill.id) this.unsaved = false;
+    }
+    return response;
+  }
+
+  /** `POST /api/assist/{id}/reject`: chopsd discards the pending write. */
+  rejectAssist(pendingId: string): Promise<AssistRejectResponse> {
+    return this.#client.rejectAssist(pendingId);
+  }
+
+  // MARK: Collections (chopsd join-table CRUD + membership helpers)
+
+  async refreshCollections(): Promise<void> {
+    try {
+      this.collections = sortCollections(await this.#client.listCollections());
+      this.collectionsError = null;
+    } catch (error) {
+      this.collectionsError = toMessage(error);
+    }
+  }
+
+  /** Creates through chopsd, then reconciles the sidebar list. */
+  async createCollection(name: string, icon: string): Promise<CollectionSummary> {
+    const created = await this.#client.createCollection({ name, icon });
+    await this.refreshCollections();
+    return created;
+  }
+
+  /**
+   * Deletes through chopsd and slides the sidebar off the vanished filter
+   * (chopsd cascades the membership rows in the store).
+   */
+  async deleteCollection(id: number): Promise<void> {
+    await this.#client.deleteCollection(id);
+    const deleted = this.collections.find((row) => row.id === id);
+    const index = this.collections.findIndex((row) => row.id === id);
+    if (index >= 0) {
+      this.collections = [
+        ...this.collections.slice(0, index),
+        ...this.collections.slice(index + 1),
+      ];
+    }
+    if (
+      deleted &&
+      this.filter.type === "collection" &&
+      this.filter.name === deleted.name
+    ) {
+      this.setFilter({ type: "allSkills" });
+    } else {
+      // Unrelated delete: the visible member list stays correct, but refresh the
+      // detail anyway so the sidebar count can't drift.
+      this.#syncCollectionDetail(this.filter);
+    }
+    await this.refreshCollections();
+  }
+
+  /** Adds a skill to a collection (`POST …/collections/{id}/skills`). */
+  async addToCollection(
+    skillId: number,
+    collection: CollectionSummary,
+  ): Promise<boolean> {
+    const response = await this.#client.addCollectionSkill(
+      collection.id,
+      skillId,
+    );
+    await this.#afterMembershipChange();
+    return response.added ?? false;
+  }
+
+  /** Removes a skill from a collection (`DELETE …/collections/{id}/skills/{skillId}`). */
+  async removeFromCollection(
+    skillId: number,
+    collection: CollectionSummary,
+  ): Promise<boolean> {
+    const response = await this.#client.removeCollectionSkill(
+      collection.id,
+      skillId,
+    );
+    await this.#afterMembershipChange();
+    return response.removed ?? false;
+  }
+
+  /** Toggles membership from the metadata-bar picker, macOS tray-button parity. */
+  async toggleCollectionMembership(
+    skill: Skill,
+    collection: CollectionSummary,
+  ): Promise<boolean> {
+    const assigned = skill.collections.some((ref) => ref.name === collection.name);
+    return assigned
+      ? this.removeFromCollection(skill.id, collection)
+      : this.addToCollection(skill.id, collection);
+  }
+
+  async #afterMembershipChange(): Promise<void> {
+    await Promise.allSettled([
+      this.refresh(),
+      this.refreshCollections(),
+      this.#syncCollectionDetail(this.filter),
+    ]);
+  }
+
+  // MARK: Registry (chopsd mirrors skills.sh; install may fire a rescan event too)
+
+  /** `GET /api/registry/trending` read for the registry sheet. */
+  fetchTrending(): Promise<RegistrySkill[]> {
+    return this.#client.listTrending();
+  }
+
+  /** `GET /api/registry/search?q=…` read for the registry sheet. */
+  searchRegistry(q: string): Promise<RegistrySkill[]> {
+    return this.#client.searchRegistry(q);
+  }
+
+
+  /** Installs through chopsd and refreshes so the new skill row appears. */
+  async installRegistrySkill(
+    request: RegistryInstallRequest,
+  ): Promise<RegistryInstallResponse> {
+    const response = await this.#client.installRegistry(request);
+    await Promise.allSettled([this.refresh(), this.refreshCollections()]);
+    return response;
+  }
+
+  // MARK: Remote servers (SSH CRUD + browse/install; UI gated by the feature flag)
+
+  listRemoteServers(): Promise<RemoteServer[]> {
+    return this.#client.listRemoteServers();
+  }
+
+  createRemoteServer(request: RemoteServerRequest): Promise<RemoteServer> {
+    return this.#client.createRemoteServer(request);
+  }
+
+  updateRemoteServer(
+    id: string,
+    request: RemoteServerRequest,
+  ): Promise<RemoteServer> {
+    return this.#client.updateRemoteServer(id, request);
+  }
+
+  deleteRemoteServer(id: string): Promise<{ deleted: boolean }> {
+    return this.#client.deleteRemoteServer(id);
+  }
+
+  browseRemote(serverId: string): Promise<RemoteBrowseResponse> {
+    return this.#client.browseRemote(serverId);
+  }
+
+  /** Installs a remote SKILL.md into the selected local tool roots, then rescans. */
+  async installRemote(
+    request: RemoteInstallRequest,
+  ): Promise<RegistryInstallResponse> {
+    const response = await this.#client.installRemote(request);
+    await Promise.allSettled([this.refresh(), this.refreshCollections()]);
+    return response;
+  }
+
+  // MARK: Settings (scan roots / plugin flag / theme through GET/PUT /api/settings)
   setUnsaved(unsaved: boolean): void {
     this.unsaved = unsaved;
+  }
+
+  /**
+   * Generic settings persistence (scan roots, plugin flag, `sotDir`) through
+   * `PUT /api/settings`; the response is the server-normalized settings row.
+   * Optimistic applied fields stay until the response replaces them — matching
+   * `setTheme` behavior — while failures surface as `settingsError`.
+   */
+  async saveSettings(patch: SettingsPatch): Promise<Settings> {
+    this.settingsError = null;
+    const requestId = ++this.#themeRequestId;
+    try {
+      const saved = await this.#client.updateSettings(patch);
+      if (requestId !== this.#themeRequestId) return saved;
+      this.settings = saved;
+      this.theme = saved.theme;
+      applyTheme(this.theme);
+      return saved;
+    } catch (error) {
+      if (requestId !== this.#themeRequestId) return this.settings as Settings;
+      this.settingsError = toMessage(error);
+      throw error;
+    }
   }
 
   /**
