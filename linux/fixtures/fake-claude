@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# fake-claude — stub one-shot "claude" CLI for the Chops Linux port test suite.
+#
+# Mocks the success path of the real transport exactly as Chops invokes it
+# (Chops/Services/Agents/Claude/ClaudeCLIAgent.swift, frozen macOS spec):
+#   claude -p --output-format json ...  ->  one JSON envelope on stdout
+#   {"result": <summary + fenced COMPLETE updated file>, "is_error": false,
+#    "total_cost_usd": <float>}
+# Chops owns the disk write; this stub never touches any file. Canned reply is
+# intentionally tool-specific so transport tests can attribute which stub ran.
+#
+# These stubs live OUTSIDE linux/fixtures/home so they are never scanned as skills.
+set -eu
+
+cat <<'JSON'
+{"result":"Renamed the example heading and rewrote the fixture skill body as requested.\n\n```markdown\n---\nname: a-one\ndescription: skill a (stub-edited)\n---\n\n# A One (stub-edit)\n\nUpdated body emitted by linux/fixtures/fake-claude.\n```","is_error":false,"total_cost_usd":0.0}
+JSON

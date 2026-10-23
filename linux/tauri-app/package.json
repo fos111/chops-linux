@@ -1,0 +1,19 @@
+{
+  "name": "chops-linux",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "ui"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace ui",
+    "build": "npm run build --workspace ui",
+    "check": "npm run check --workspace ui",
+    "tauri": "tauri",
+    "test": "npm run test --workspace ui"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

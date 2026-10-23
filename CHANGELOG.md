@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## Linux 0.1.0 (2026-10-23)
+
+- First Linux desktop port of Chops: Tauri + Svelte shell backed by the Swift `chopsd` sidecar
+- Skill scanning, editor/preview, collections, registry browse/install, AI compose with diff review,
+  settings, and remote SSH servers
+- Debian package `Chops_0.1.0_amd64.deb` with desktop entry and bundled `chopsd`
+
 ## [1.16.0] - 2026-08-23
 
 - Browse Skills now opens to a Trending list of popular skills

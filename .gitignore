@@ -36,3 +36,8 @@ site/node_modules/
 site/dist/
 site/.astro/
 site/.wrangler/
+
+# Linux port
+linux/tauri-app/target/
+linux/tauri-app/ui/dist/
+linux/tauri-app/src-tauri/bin/

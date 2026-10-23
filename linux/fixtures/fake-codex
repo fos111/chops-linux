@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# fake-codex — stub one-shot "codex" CLI for the Chops Linux port test suite.
+#
+# Mocks the success path of the real transport exactly as Chops invokes it
+# (Chops/Services/Agents/Codex/CodexCLIAgent.swift, frozen macOS spec):
+#   codex exec --skip-git-repo-check --sandbox read-only --ephemeral
+#              --color never --output-last-message <path> <prompt>
+# The final agent reply (summary + fenced COMPLETE updated file) is written to
+# the --output-last-message path; freeform status goes to stdout.
+#
+# Loud failure if the flag is missing — the stub must only ever be called the
+# way the transport calls it (integrity check, not a fallback).
+#
+# These stubs live OUTSIDE linux/fixtures/home so they are never scanned as skills.
+set -eu
+
+# Find the element right after --output-last-message and write the canned reply there.
+out=""
+rest=("$@")
+while [ "${#rest[@]}" -gt 0 ]; do
+  if [ "${rest[0]}" = "--output-last-message" ] && [ "${#rest[@]}" -gt 1 ]; then
+    out="${rest[1]}"
+    break
+  fi
+  rest=("${rest[@]:1}")
+done
+
+if [ -z "$out" ]; then
+  echo "fake-codex: --output-last-message <path> missing for one-shot success path" >&2
+  exit 64
+fi
+
+cat > "$out" <<'EOF'
+Tightened the fixture skill wording and restated the closing note.
+
+```markdown
+---
+name: c-three
+description: skill c (stub-edited)
+---
+
+# C Three (stub-edit)
+
+Updated body emitted by linux/fixtures/fake-codex.
+```
+EOF
+
+echo "codex exec (stub) — wrote final message to $out"

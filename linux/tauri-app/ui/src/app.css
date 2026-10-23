@@ -1,0 +1,247 @@
+/*
+ * Global design tokens for the Tauri shell.
+ *
+ * Theme modes:
+ *   system -> no `data-theme` attribute; the prefers-color-scheme block below applies.
+ *   light  -> `data-theme="light"` (base tokens; the dark media query excludes it).
+ *   dark   -> `data-theme="dark"` (explicit dark tokens).
+ *
+ * The mode itself is persisted through chopsd (`PUT /api/settings`), never localStorage.
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f2f2f4;
+  --sidebar-bg: #ececf0;
+  --panel: #ffffff;
+  --panel-alt: #f7f7f9;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --border: #d9d9de;
+  --border-strong: #c6c6cc;
+  --hover: #e8e8ed;
+  --selected: #dde8fb;
+  --accent: #396cd8;
+  --accent-strong: #2456b8;
+  --accent-contrast: #ffffff;
+  --star: #d9a300;
+  --badge-bg: #ececf0;
+  --badge-text: #5c5c61;
+  --status-bg: #f7f7f9;
+  --ok: #2da44e;
+  --warn: #b7791f;
+  --warn-bg: #fdf1d6;
+  --warn-text: #7a5200;
+  --danger: #c0392b;
+  --error-bg: #fdecea;
+  --error-text: #a12a1f;
+  --focus-ring: rgba(57, 108, 216, 0.25);
+  --palette-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  --code-keyword: #a626a4;
+  --code-string: #1f7a3f;
+  --code-number: #b76b01;
+  --code-title: #2456b8;
+  --code-type: #a0522d;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: #1b1b1e;
+    --sidebar-bg: #202024;
+    --panel: #232327;
+    --panel-alt: #2a2a2f;
+    --text: #ececf1;
+    --muted: #9a9aa3;
+    --border: #36363c;
+    --border-strong: #48484f;
+    --hover: #2d2d33;
+    --selected: #2f3d55;
+    --accent: #5b8def;
+    --accent-strong: #b7ccff;
+    --accent-contrast: #ffffff;
+    --star: #f2c14e;
+    --badge-bg: #34343b;
+    --badge-text: #b9b9c2;
+    --status-bg: #202024;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --warn-bg: #3a2f14;
+    --warn-text: #f0c96a;
+    --danger: #f85149;
+    --error-bg: #3a1f1e;
+    --error-text: #ff9b91;
+    --focus-ring: rgba(91, 141, 239, 0.35);
+    --palette-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+    --code-keyword: #c678dd;
+    --code-string: #98c379;
+    --code-number: #d19a66;
+    --code-title: #61afef;
+    --code-type: #e5c07b;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #1b1b1e;
+  --sidebar-bg: #202024;
+  --panel: #232327;
+  --panel-alt: #2a2a2f;
+  --text: #ececf1;
+  --muted: #9a9aa3;
+  --border: #36363c;
+  --border-strong: #48484f;
+  --hover: #2d2d33;
+  --selected: #2f3d55;
+  --accent: #5b8def;
+  --accent-strong: #b7ccff;
+  --accent-contrast: #ffffff;
+  --star: #f2c14e;
+  --badge-bg: #34343b;
+  --badge-text: #b9b9c2;
+  --status-bg: #202024;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --warn-bg: #3a2f14;
+  --warn-text: #f0c96a;
+  --danger: #f85149;
+  --error-bg: #3a1f1e;
+  --error-text: #ff9b91;
+  --focus-ring: rgba(91, 141, 239, 0.35);
+  --palette-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --code-keyword: #c678dd;
+  --code-string: #98c379;
+  --code-number: #d19a66;
+  --code-title: #61afef;
+  --code-type: #e5c07b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Cantarell,
+    "Noto Sans",
+    sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+button {
+  cursor: default;
+}
+
+::selection {
+  background: var(--selected);
+  color: var(--accent-strong);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: var(--border-strong);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* highlight.js tokens for the Markdown preview (theme follows the app tokens). */
+.hljs {
+  display: block;
+  overflow-x: auto;
+  color: inherit;
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag {
+  color: var(--code-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute {
+  color: var(--code-string);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: var(--code-number);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-title.function_,
+.hljs-name {
+  color: var(--code-title);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-class .hljs-title,
+.hljs-variable.language_ {
+  color: var(--code-type);
+}
+
+.hljs-meta,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--accent-strong);
+}
+
+.hljs-deletion {
+  color: var(--danger);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}

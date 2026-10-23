@@ -1,0 +1,8 @@
+---
+name: rule-one
+description: cursor rule one
+---
+
+# rule-one
+
+Fixture Cursor `.mdc` rule — exercises the MDCParser frontmatter path.
