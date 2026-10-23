@@ -82,6 +82,35 @@ Then hit **Cmd+R** to build and run.
 xcodebuild -scheme Chops -configuration Debug build
 ```
 
+### Linux
+
+A Debian/Linux desktop port lives in `Core/` and `linux/`. It ships a Swift `chopsd`
+sidecar and a Tauri v2 + Svelte shell, and does not modify the macOS sources.
+
+Prerequisites: Swift 6.4, Rust, Node.js 20+, and the Tauri/WebKitGTK packages listed in
+[`docs/linux.md`](docs/linux.md).
+
+```bash
+swift build --product chopsd
+mkdir -p linux/tauri-app/src-tauri/bin
+cp .build/debug/chopsd linux/tauri-app/src-tauri/bin/chopsd-x86_64-unknown-linux-gnu
+npm ci --prefix linux/tauri-app
+npm run tauri dev --prefix linux/tauri-app
+```
+
+Package and verify:
+
+```bash
+swift build -c release --product chopsd
+cp .build/release/chopsd linux/tauri-app/src-tauri/bin/chopsd-x86_64-unknown-linux-gnu
+cd linux/tauri-app && npm ci && npx tauri build --bundles deb
+cd ../.. && bash scripts/linux/verify.sh
+```
+
+The `.deb` is written to
+`linux/tauri-app/src-tauri/target/release/bundle/deb/Chops_0.1.0_amd64.deb`.
+See [`docs/linux.md`](docs/linux.md) for the full build, packaging, and troubleshooting guide.
+
 ## Contributing
 
 Want to change the app? The sections below cover project layout, architecture, and common tasks.
