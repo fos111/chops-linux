@@ -393,6 +393,36 @@ describe("ChopsApp bootstrap", () => {
     expect(app.skills).toEqual([]);
     stop();
   });
+
+  it("recovers settings and collections when the daemon becomes reachable", async () => {
+    let down = true;
+    const fake = makeFakeClient({
+      getSettings: vi.fn(async () => {
+        if (down) throw new Error("Load failed");
+        return makeSettings({ theme: "light" });
+      }),
+      listCollections: vi.fn(async () => {
+        if (down) throw new Error("Load failed");
+        return [makeCollection({ id: 9, name: "Recovered" })];
+      }),
+    });
+    const app = createApp(fake);
+    const stop = app.start();
+    await app.ready;
+
+    expect(app.settingsError).toContain("Load failed");
+    expect(app.collectionsError).toContain("Load failed");
+
+    down = false;
+    fake.handlers[0].onStatus("connected");
+    await vi.waitFor(() => {
+      expect(app.settingsError).toBeNull();
+      expect(app.collectionsError).toBeNull();
+    });
+    expect(app.theme).toBe("light");
+    expect(app.collections.map((collection) => collection.name)).toEqual(["Recovered"]);
+    stop();
+  });
 });
 
 describe("filters, search, and selection", () => {

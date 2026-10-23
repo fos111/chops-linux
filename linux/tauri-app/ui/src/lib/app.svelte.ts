@@ -197,8 +197,12 @@ export class ChopsApp {
         this.connection = state;
         if (state === "connected") {
           // A first connection (or a reconnect after chopsd restarts) catches the
-          // list up on anything missed while the socket was down.
+          // list up on anything missed while the socket was down. Settings and
+          // collections are bootstrap-only, so a cold-start race would otherwise
+          // leave them failed for the whole session.
           void this.refresh();
+          void this.#reloadSettings();
+          void this.#reloadCollections();
         }
       },
     });
@@ -246,6 +250,15 @@ export class ChopsApp {
       this.settingsError = null;
     } catch (error) {
       this.settingsError = toMessage(error);
+    }
+  }
+
+  async #reloadCollections(): Promise<void> {
+    try {
+      this.collections = sortCollections(await this.#client.listCollections());
+      this.collectionsError = null;
+    } catch (error) {
+      this.collectionsError = toMessage(error);
     }
   }
 
